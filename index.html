@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RandLoRA: Full-Rank Parameter-Efficient Fine-Tuning of Large Models</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            margin: 20px;
+        }
+
+        h1 {
+            color: #333;
+        }
+
+        h2 {
+            color: #3498DB;
+            margin-top: 20px;
+        }
+
+        h3 {
+            color: #555;
+            margin-top: 15px;
+        }
+
+        p {
+            margin-bottom: 10px;
+        }
+
+        code {
+            background-color: #f4f4f4;
+            padding: 2px 5px;
+            border-radius: 5px;
+        }
+
+        pre {
+            background-color: #f4f4f4;
+            padding: 10px;
+            border-radius: 5px;
+            overflow-x: auto;
+        }
+
+        img {
+            max-width: 100%;
+            height: auto;
+            display: block;
+            margin: 20px 0;
+        }
+
+        a {
+            color: #007bff;
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+        ul, ol {
+            margin-bottom: 10px;
+        }
+
+        li {
+            margin-bottom: 5px;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+        }
+		
+
+	.figure-item {
+	    border: 1px solid #ddd;
+	    padding: 10px;
+	    text-align: center;
+	}
+	
+
+	.figure-item iframe {
+	    width: 100%;
+	    height: 500px;
+	    border: none; 
+	}
+	
+	/*  Small screen adaptation */
+	@media (max-width: 2000px) {
+	    .figures-container {
+		grid-template-columns: 1fr; /* Stack on smaller screens */
+	    }
+	}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>RandLoRA: Full-Rank Parameter-Efficient Fine-Tuning of Large Models</h1>
+
+        <p><strong>RandLoRA introduces a novel parameter-efficient fine-tuning method that achieves full-rank updates by learning linear combinations of low-rank random matrices, overcoming some limitations of standard Low-Rank Adaptation (LoRA).</strong></p>
+
+        <p>This repository contains the official code for RandLoRA, including an <strong>unofficial</strong> integration with the Hugging Face <a href="https://github.com/huggingface/peft">PEFT</a> and <a href="https://github.com/huggingface/transformers">Transformers</a> libraries.</p>
+
+        <p><strong>Read the preprint to learn more about RandLoRA:</strong> <a href="https://arxiv.org/abs/2502.00987">Preprint</a></p>
+
+        <img src="figures/overview.png" alt="RandLoRA Overview">
+
+        <h2>Abstract</h2>
+
+        <blockquote>
+            Low-Rank Adaptation (LoRA) and its variants have shown impressive results in reducing the number of trainable parameters and memory requirements of large
+            transformer networks while maintaining fine-tuning performance. However, the low-rank nature of the weight update inherently limits the representation power of the fine-tuned model, potentially compromising performance on complex tasks. This raises a critical question: when a performance gap between LoRA and
+            standard fine-tuning is observed, is it due to the reduced number of trainable parameters or the rank deficiency?
+            This paper aims to answer this question by introducing RandLoRA, a parameter-efficient method that performs full-rank updates using a learned linear combinations of low-rank, non-trainable random matrices. Our method limits the number of trainable parameters by restricting optimization to diagonal scaling matrices applied to the fixed random matrices. This allows us to effectively overcome low-rank limitations while maintaining low parameter count and memory usage during training.
+            Through extensive experimentation across vision, language, and vision-language benchmarks, we systematically evaluate the limitations of LoRA and existing random basis methods. Our findings reveal that full-rank updates are beneficial across vision and language tasks separately, but especially so for vision-language tasks, where RandLoRA significantly reduces—and sometimes eliminates—the performance gap between standard finetuning and LoRA, demonstrating its efficacy.
+        </blockquote>
+
+        <h2>Quickstart</h2>
+
+        <ol>
+            <li>Clone: <code>git clone https://github.com/PaulAlbert31/RandLoRA.git && cd RandLoRA</code></li>
+            <li>Environment: <code>conda create -n randlora_peft python=3.12 && conda activate randlora_peft</code></li>
+            <li>PyTorch: See <a href="https://pytorch.org/get-started/locally/">pytorch.org</a> for your CUDA version, example: <code>conda install pytorch torchvision torchaudio pytorch-cuda=11.8 -c pytorch -c nvidia</code> (adjust as needed)</li>
+            <li>Dependencies: <code>pip install transformers accelerate</code></li>
+        </ol>
+
+        <h2>Usage Examples</h2>
+
+        <p>Here's a basic example of how you might use RandLoRA's PEFT integration:</p>
+
+        <pre><code>
+import sys
+import os
+import torch
+
+# --- Quick Start with RandLoRA ---
+
+# 1. **Setup:** Ensure 'peft' and 'transformers' are accessible. Adjust paths if needed for local versions.
+sys.path.append(os.path.join(os.getcwd(), "peft/src/"))
+from peft import RandLoraConfig, get_peft_model, prepare_model_for_kbit_training
+sys.path.append(os.path.join(os.getcwd(), "transformers"))
+from transformers import AutoModelForCausalLM
+
+# 2. **Configuration:** Define RandLoRA parameters and the base model.
+seed = 1
+rank = 30
+load_4bit = False
+base_model = 'meta-llama/Meta-Llama-3-8B'
+
+config = RandLoraConfig(
+    r=rank,
+    randlora_alpha=2*rank,
+    randlora_dropout=0.05,
+    target_modules=["q_proj", "k_proj", "v_proj", "up_proj", "down_proj"],
+    bias="none",
+    task_type="CAUSAL_LM",
+    projection_prng_key=int(torch.exp(torch.tensor(seed))*3.1415*1000),
+)
+
+# 3. **Load Model:** Load the base model, optionally in 4-bit.
+model = AutoModelForCausalLM.from_pretrained(
+    base_model,
+    load_in_4bit=load_4bit,
+    torch_dtype=torch.float16,
+    trust_remote_code=True,
+)
+
+# 4. **Prepare for 4-bit (Optional):** If using 4-bit, prepare for training.
+if load_4bit:
+    model = prepare_model_for_kbit_training(model)
+
+# 5. **Apply RandLoRA:**  Add RandLoRA adapters to the model.
+model.gradient_checkpointing_enable()
+model = get_peft_model(model, config)
+
+# 6. **Ready to Go:** The `model` is now configured with RandLoRA.
+print(model)
+	</code></pre>
+	
+
+	<h2>We find that RandLoRA leads to deeper loss minima than LoRA for equal amount of trainable parameters.</h2>
+	<h3>Below are 3D plots of the mode connectivity between std. fine-tuning, RandLoRA and LoRA in the loss landscape. Fine-tuning is the deepest mode while LoRA is the shallowest.</h3>
+
+	<div class="figures-container">
+	  <div class="figure-item">
+            <h3>CIFAR100</h3>
+            <iframe src="figures/3d_CIFAR100_CLIP.html"></iframe>
+	  </div>
+	  <div class="figure-item">
+            <h3>Food101</h3>
+            <iframe src="figures/3d_Food101_CLIP.html"></iframe>
+	  </div>
+	  <div class="figure-item">
+            <h3>UCF101</h3>
+            <iframe src="figures/3d_UCF101_CLIP.html"></iframe>
+	  </div>
+	</div>
+
+
+	<h2>Some accuracy numbers for finetuning CLIP and LLMs for commonsense reasoning, more to be found in the <a href="https://arxiv.org/abs/2502.00987">paper</a>.</h2>
+
+	<img src="figures/commsense.png" alt="RandLoRA Commonsense">
+	<img src="figures/clip.png" alt="RandLoRA CLIP">
+
+        <h2>Citation</h2>
+
+        <p>If your work benefited from our research, please consider citing the paper.</p>
+
+        <pre><code>
+@article{2024_arxiv_RandLoRA,
+  title={RandLoRA: full rank parameter-efficient fine-tuning of large models},
+  author={Albert, Paul and Zhang, Frederic Z and Rodriguez-Opazo, Cristian and Saratchandran, Hemanth and Hengel, Anton van den and Abbasnejad, Ehsan},
+  journal={},
+  year={2024}
+}
+</code></pre>
+    </div>
+</body>
+</html>
